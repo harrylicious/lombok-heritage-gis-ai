@@ -82,6 +82,13 @@ export type Database = {
             referencedRelation: "cultural_sites"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "ai_analysis_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "sites_with_categories"
+            referencedColumns: ["id"]
+          },
         ]
       }
       conservation_projects: {
@@ -155,6 +162,13 @@ export type Database = {
             columns: ["site_id"]
             isOneToOne: false
             referencedRelation: "cultural_sites"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conservation_projects_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "sites_with_categories"
             referencedColumns: ["id"]
           },
         ]
@@ -433,6 +447,13 @@ export type Database = {
             referencedRelation: "cultural_sites"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "historical_records_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "sites_with_categories"
+            referencedColumns: ["id"]
+          },
         ]
       }
       profiles: {
@@ -529,6 +550,13 @@ export type Database = {
             referencedRelation: "cultural_sites"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "route_sites_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "sites_with_categories"
+            referencedColumns: ["id"]
+          },
         ]
       }
       site_media: {
@@ -580,6 +608,13 @@ export type Database = {
             columns: ["site_id"]
             isOneToOne: false
             referencedRelation: "cultural_sites"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "site_media_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "sites_with_categories"
             referencedColumns: ["id"]
           },
           {
@@ -646,6 +681,13 @@ export type Database = {
             columns: ["site_id"]
             isOneToOne: false
             referencedRelation: "cultural_sites"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "site_reviews_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "sites_with_categories"
             referencedColumns: ["id"]
           },
           {
@@ -733,7 +775,72 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      sites_with_categories: {
+        Row: {
+          accessibility_info: string | null
+          address: string | null
+          ai_analysis_count: number | null
+          altitude: number | null
+          average_rating: number | null
+          category_color: string | null
+          category_description: string | null
+          category_id: string | null
+          category_name: string | null
+          contact_info: string | null
+          created_at: string | null
+          created_by: string | null
+          cultural_significance_score: number | null
+          description: string | null
+          district: string | null
+          entrance_fee: number | null
+          established_year: number | null
+          historical_significance: string | null
+          id: string | null
+          is_active: boolean | null
+          is_unesco_site: boolean | null
+          latitude: number | null
+          local_name: string | null
+          longitude: number | null
+          name: string | null
+          postal_code: string | null
+          preservation_status:
+            | Database["public"]["Enums"]["preservation_status"]
+            | null
+          province: string | null
+          regency: string | null
+          review_count: number | null
+          tourism_popularity_score: number | null
+          updated_at: string | null
+          verified_at: string | null
+          verified_by: string | null
+          village: string | null
+          visiting_hours: string | null
+          website_url: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cultural_sites_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "heritage_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cultural_sites_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "cultural_sites_verified_by_fkey"
+            columns: ["verified_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
     }
     Functions: {
       [_ in never]: never
