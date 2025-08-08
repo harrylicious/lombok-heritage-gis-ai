@@ -16,7 +16,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { MapPin, Image as ImageIcon, Shield } from "lucide-react";
-
+import { classifyImage } from "@/lib/cnn";
 // Fix Leaflet default markers
 // @ts-ignore
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -53,8 +53,9 @@ const Admin: React.FC = () => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [createdSiteId, setCreatedSiteId] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
-  const [selectedImage, setSelectedImage] = useState<File | null>(null);
-
+const [selectedImage, setSelectedImage] = useState<File | null>(null);
+const [analysis, setAnalysis] = useState<{ label: string; score: number }[] | null>(null);
+const [analyzing, setAnalyzing] = useState(false);
   // Map refs
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
@@ -156,18 +157,33 @@ const Admin: React.FC = () => {
     }
   };
 
-  const handleAnalyze = async () => {
-    if (!createdSiteId || !selectedImage) {
-      toast({ title: "Lengkapi data", description: "Simpan situs dan pilih gambar terlebih dahulu" });
-      return;
-    }
+const handleAnalyze = async () => {
+  if (!createdSiteId || !selectedImage) {
+    toast({ title: "Lengkapi data", description: "Simpan situs dan pilih gambar terlebih dahulu" });
+    return;
+  }
 
-    // Placeholder until Edge Function is configured
+  try {
+    setAnalyzing(true);
+    setAnalysis(null);
+    const results = await classifyImage(selectedImage);
+    setAnalysis(results);
+    const top = results[0];
     toast({
-      title: "Butuh Token Hugging Face",
-      description: "Masukkan HUGGING_FACE_ACCESS_TOKEN agar analisis CNN bisa dijalankan.",
+      title: "Analisis selesai",
+      description: `Prediksi: ${top.label} (${Math.round(top.score * 100)}%)`,
     });
-  };
+  } catch (err: any) {
+    console.error(err);
+    toast({
+      title: "Gagal analisis",
+      description: err?.message || "Terjadi kesalahan saat memproses gambar",
+      variant: "destructive",
+    });
+  } finally {
+    setAnalyzing(false);
+  }
+};
 
   return (
     <div className="min-h-screen bg-gradient-cultural">
@@ -389,13 +405,36 @@ const Admin: React.FC = () => {
                   <Label htmlFor="image">Unggah Gambar Situs</Label>
                   <Input id="image" type="file" accept="image/*" onChange={(e) => setSelectedImage(e.target.files?.[0] || null)} />
                 </div>
-                <Button variant="secondary" onClick={handleAnalyze} disabled={!createdSiteId || !selectedImage}>
-                  Jalankan Analisis CNN
-                </Button>
-                {!createdSiteId && (
-                  <p className="text-xs text-muted-foreground">Simpan situs terlebih dahulu untuk mengaktifkan analisis.</p>
-                )}
-              </div>
+<Button variant="secondary" onClick={handleAnalyze} disabled={!createdSiteId || !selectedImage || analyzing}>
+  {analyzing ? "Menganalisis..." : "Jalankan Analisis CNN (Tanpa Token)"}
+</Button>
+{!createdSiteId && (
+  <p className="text-xs text-muted-foreground">Simpan situs terlebih dahulu untuk mengaktifkan analisis.</p>
+)}
+{selectedImage && (
+  <div className="pt-2">
+    <img
+      src={URL.createObjectURL(selectedImage)}
+      alt="Gambar situs untuk analisis CNN"
+      className="w-full h-40 object-cover rounded-md"
+      loading="lazy"
+    />
+  </div>
+)}
+{analysis && (
+  <div className="pt-2">
+    <h4 className="text-sm font-medium mb-1">Hasil Analisis</h4>
+    <ul className="space-y-1">
+      {analysis.slice(0, 5).map((r, i) => (
+        <li key={i} className="text-sm flex items-center justify-between">
+          <span className="text-muted-foreground">{r.label}</span>
+          <span className="font-medium">{Math.round(r.score * 100)}%</span>
+        </li>
+      ))}
+    </ul>
+  </div>
+)}
+</div>
             </Card>
           </div>
         </div>
