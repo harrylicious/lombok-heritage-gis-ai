@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Search, Filter, Map, Grid3X3, Brain, MapPin, Sparkles } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { Link } from 'react-router-dom';
 
 import HeroBanner from '@/components/HeroBanner';
 import SiteCard from '@/components/SiteCard';
@@ -180,6 +181,11 @@ const Index = () => {
               </TabsTrigger>
             </TabsList>
           </Card>
+          <div className="flex justify-end mt-2">
+            <Link to="/admin">
+              <Button variant="outline" size="sm">Admin</Button>
+            </Link>
+          </div>
 
           {/* Overview Tab */}
           <TabsContent value="overview" className="space-y-6">
