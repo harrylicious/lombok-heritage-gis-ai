@@ -35,6 +35,7 @@ const Auth: React.FC = () => {
   const [tab, setTab] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [securityCode, setSecurityCode] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -63,7 +64,19 @@ const Auth: React.FC = () => {
       setLoading(true);
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
-      toast({ title: "Berhasil masuk", description: "Selamat datang kembali." });
+
+      if (securityCode.trim()) {
+        const { error: fnError } = await supabase.functions.invoke("apply-admin-role", {
+          body: { securityCode: securityCode.trim() },
+        });
+        if (fnError) {
+          toast({ title: "Kode keamanan tidak valid", description: fnError.message || "Gagal menerapkan hak admin.", variant: "destructive" });
+        } else {
+          toast({ title: "Berhasil masuk", description: "Hak admin diterapkan. Mengalihkan..." });
+        }
+      } else {
+        toast({ title: "Berhasil masuk", description: "Selamat datang kembali." });
+      }
       // Navigation will happen via auth state listener
     } catch (err: any) {
       toast({ title: "Gagal masuk", description: err?.message || "Periksa email dan kata sandi", variant: "destructive" });
@@ -82,6 +95,18 @@ const Auth: React.FC = () => {
         options: { emailRedirectTo: redirectUrl },
       });
       if (error) throw error;
+
+      if (securityCode.trim()) {
+        const { error: fnError } = await supabase.functions.invoke("apply-admin-role", {
+          body: { securityCode: securityCode.trim() },
+        });
+        if (fnError) {
+          toast({ title: "Verifikasi dibutuhkan", description: "Setelah verifikasi email, login dan masukkan kembali security code untuk menetapkan admin.", variant: "default" });
+        } else {
+          toast({ title: "Security code valid", description: "Hak admin telah diterapkan ke akun Anda." });
+        }
+      }
+
       toast({ title: "Registrasi berhasil", description: "Periksa email Anda untuk verifikasi." });
     } catch (err: any) {
       toast({ title: "Gagal daftar", description: err?.message || "Coba email lain", variant: "destructive" });
@@ -113,6 +138,10 @@ const Auth: React.FC = () => {
                   <Label htmlFor="password-login">Kata Sandi</Label>
                   <Input id="password-login" type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} />
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="security-login">Security Code (opsional)</Label>
+                  <Input id="security-login" type="text" placeholder="Masukkan kode keamanan admin" value={securityCode} onChange={(e) => setSecurityCode(e.target.value)} />
+                </div>
                 <Button onClick={handleLogin} disabled={loading} className="w-full">
                   {loading ? "Memproses..." : "Masuk"}
                 </Button>
@@ -126,6 +155,10 @@ const Auth: React.FC = () => {
                 <div className="space-y-2">
                   <Label htmlFor="password-signup">Kata Sandi</Label>
                   <Input id="password-signup" type="password" placeholder="Minimal 6 karakter" value={password} onChange={(e) => setPassword(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="security-signup">Security Code (opsional)</Label>
+                  <Input id="security-signup" type="text" placeholder="Masukkan kode keamanan admin" value={securityCode} onChange={(e) => setSecurityCode(e.target.value)} />
                 </div>
                 <Button onClick={handleSignup} disabled={loading} className="w-full" variant="secondary">
                   {loading ? "Memproses..." : "Daftar"}
