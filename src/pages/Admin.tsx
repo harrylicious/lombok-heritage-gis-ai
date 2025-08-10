@@ -17,6 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { MapPin, Image as ImageIcon, Shield } from "lucide-react";
 import { classifyImage } from "@/lib/cnn";
+import { useNavigate } from "react-router-dom";
 // Fix Leaflet default markers
 // @ts-ignore
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -61,6 +62,17 @@ const [analyzing, setAnalyzing] = useState(false);
   const map = useRef<L.Map | null>(null);
   const marker = useRef<L.Marker | null>(null);
 
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      toast({ title: "Gagal logout", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Berhasil logout", description: "Anda telah keluar." });
+      navigate("/");
+    }
+  };
   const form = useForm<SiteFormValues>({
     resolver: zodResolver(siteSchema),
     defaultValues: {
@@ -140,6 +152,7 @@ const [analyzing, setAnalyzing] = useState(false);
         village: values.village || null,
         district: values.district || null,
         established_year: values.established_year,
+        created_by: userId,
       };
 
       const { data, error } = await supabase.from("cultural_sites").insert(payload).select("id").single();
@@ -190,9 +203,14 @@ const handleAnalyze = async () => {
       <div className="container mx-auto px-4 py-6 space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">Admin Input Warisan Budaya</h1>
-          <div className="text-sm text-muted-foreground flex items-center gap-2">
-            <Shield className="w-4 h-4" />
-            <span>Hanya pengguna terautentik yang dapat menyimpan</span>
+          <div className="flex items-center gap-3">
+            <div className="text-sm text-muted-foreground hidden sm:flex items-center gap-2">
+              <Shield className="w-4 h-4" />
+              <span>Hanya admin yang dapat menambah data</span>
+            </div>
+            {userId && (
+              <Button variant="outline" size="sm" onClick={handleLogout}>Keluar</Button>
+            )}
           </div>
         </div>
 
@@ -378,7 +396,7 @@ const handleAnalyze = async () => {
                 </div>
 
                 <div className="flex justify-end">
-                  <Button type="submit">Simpan Situs</Button>
+                  <Button type="submit" disabled={!userId}>Simpan Situs</Button>
                 </div>
               </form>
             </Form>
