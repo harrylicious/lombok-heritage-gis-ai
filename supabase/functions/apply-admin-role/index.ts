@@ -72,6 +72,7 @@ serve(async (req) => {
       const { error: insertErr } = await supabaseAdmin.from("profiles").insert({
         user_id: userId,
         role: "admin",
+        full_name: userData.user.email || "Admin User",
       });
       if (insertErr) {
         console.error("Insert error:", insertErr);
