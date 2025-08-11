@@ -88,11 +88,9 @@ const Auth: React.FC = () => {
   const handleSignup = async () => {
     try {
       setLoading(true);
-      const redirectUrl = `${window.location.origin}/`;
       const { error } = await supabase.auth.signUp({
         email,
         password,
-        options: { emailRedirectTo: redirectUrl },
       });
       if (error) throw error;
 
@@ -107,7 +105,7 @@ const Auth: React.FC = () => {
         }
       }
 
-      toast({ title: "Registrasi berhasil", description: "Periksa email Anda untuk verifikasi." });
+      toast({ title: "Registrasi berhasil", description: "Akun aktif tanpa verifikasi email. Mengalihkan..." });
     } catch (err: any) {
       toast({ title: "Gagal daftar", description: err?.message || "Coba email lain", variant: "destructive" });
     } finally {
@@ -163,7 +161,7 @@ const Auth: React.FC = () => {
                 <Button onClick={handleSignup} disabled={loading} className="w-full" variant="secondary">
                   {loading ? "Memproses..." : "Daftar"}
                 </Button>
-                <p className="text-xs text-muted-foreground text-center">Tips: Nonaktifkan "Confirm email" di pengaturan Supabase saat pengujian.</p>
+                <p className="text-xs text-muted-foreground text-center">Akun baru aktif tanpa verifikasi email.</p>
               </TabsContent>
             </Tabs>
 

@@ -182,8 +182,8 @@ const Index = () => {
             </TabsList>
           </Card>
           <div className="flex justify-end mt-2">
-            <Link to="/admin">
-              <Button variant="outline" size="sm">Masuk Admin</Button>
+            <Link to="/auth">
+              <Button variant="outline" size="sm">Login Admin</Button>
             </Link>
           </div>
 
