@@ -70,11 +70,21 @@ const Auth: React.FC = () => {
           body: { securityCode: securityCode.trim() },
         });
         if (fnError) {
+          console.error("Security code error:", fnError);
           toast({ title: "Kode keamanan tidak valid", description: fnError.message || "Gagal menerapkan hak admin.", variant: "destructive" });
         } else {
           toast({ title: "Berhasil masuk", description: "Hak admin diterapkan. Mengalihkan..." });
         }
       } else {
+        // Create regular user profile if no security code
+        const { data: userSession } = await supabase.auth.getSession();
+        if (userSession?.session?.user) {
+          await supabase.from("profiles").upsert({
+            user_id: userSession.session.user.id,
+            full_name: userSession.session.user.email || "User",
+            role: "tourist"
+          });
+        }
         toast({ title: "Berhasil masuk", description: "Selamat datang kembali." });
       }
       // Navigation will happen via auth state listener
@@ -99,9 +109,20 @@ const Auth: React.FC = () => {
           body: { securityCode: securityCode.trim() },
         });
         if (fnError) {
-          toast({ title: "Verifikasi dibutuhkan", description: "Setelah verifikasi email, login dan masukkan kembali security code untuk menetapkan admin.", variant: "default" });
+          console.error("Security code error:", fnError);
+          toast({ title: "Kode keamanan tidak valid", description: fnError.message || "Security code salah atau belum di-set di Supabase.", variant: "destructive" });
         } else {
           toast({ title: "Security code valid", description: "Hak admin telah diterapkan ke akun Anda." });
+        }
+      } else {
+        // Create regular user profile for signup without security code
+        const { data: userSession } = await supabase.auth.getSession();
+        if (userSession?.session?.user) {
+          await supabase.from("profiles").upsert({
+            user_id: userSession.session.user.id,
+            full_name: userSession.session.user.email || "User",
+            role: "tourist"
+          });
         }
       }
 
