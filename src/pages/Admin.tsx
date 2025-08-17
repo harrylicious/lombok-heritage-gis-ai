@@ -160,6 +160,8 @@ const [analyzing, setAnalyzing] = useState(false);
 
       setCreatedSiteId(data?.id || null);
       toast({ title: "Berhasil", description: "Situs budaya berhasil disimpan" });
+      //reset form after successful submission
+      form.reset();
     } catch (err: any) {
       console.error(err);
       toast({
