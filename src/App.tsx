@@ -7,6 +7,8 @@ import Index from "./pages/Index";
 import Admin from "./pages/Admin";
 import NotFound from "./pages/NotFound";
 import Auth from "./pages/Auth";
+import SiteDetail from "./pages/SiteDetail";
+import RouteDetail from "./pages/RouteDetail";
 import RequireAuth from "./components/auth/RequireAuth";
 
 const queryClient = new QueryClient();
@@ -20,6 +22,8 @@ const App = () => (
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/auth" element={<Auth />} />
+          <Route path="/site/:id" element={<SiteDetail />} />
+          <Route path="/route/:id" element={<RouteDetail />} />
           <Route path="/admin" element={<Admin />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />

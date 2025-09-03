@@ -1,13 +1,14 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { 
-  MapPin, 
-  Star, 
-  Clock, 
-  DollarSign, 
-  Eye, 
+import {
+  MapPin,
+  Star,
+  Clock,
+  DollarSign,
+  Eye,
   Brain,
   Camera,
   Calendar
@@ -152,18 +153,19 @@ const SiteCard: React.FC<SiteCardProps> = ({
 
         {/* Actions */}
         <div className="flex gap-2">
-          <Button 
-            variant="default" 
-            size="sm" 
-            onClick={() => onViewDetails?.(site)}
-            className="flex-1 bg-gradient-to-r from-primary to-primary-glow hover:shadow-cultural transition-all"
-          >
-            <Eye className="w-4 h-4 mr-2" />
-            Lihat Detail
-          </Button>
-          <Button 
-            variant="outline" 
-            size="sm" 
+          <Link to={`/site/${site.id}`} className="flex-1">
+            <Button
+              variant="default"
+              size="sm"
+              className="w-full bg-gradient-to-r from-primary to-primary-glow hover:shadow-cultural transition-all"
+            >
+              <Eye className="w-4 h-4 mr-2" />
+              Lihat Detail
+            </Button>
+          </Link>
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => onViewOnMap?.(site)}
             className="hover:bg-heritage hover:text-heritage-foreground transition-colors"
           >

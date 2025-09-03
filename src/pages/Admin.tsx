@@ -2,11 +2,12 @@ import React, { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Shield, Database as DatabaseIcon, Tag, Users } from "lucide-react";
+import { Shield, Database as DatabaseIcon, Tag, Users, MessageSquare } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import SitesManagement from "@/pages/SitesManagement";
 import CategoriesManagement from "@/pages/CategoriesManagement";
 import CulturalPracticesManagement from "@/pages/CulturalPracticesManagement";
+import ReviewsModeration from "@/components/ReviewsModeration";
 
 const Admin: React.FC = () => {
   const [activeTab, setActiveTab] = useState("sites");
@@ -60,6 +61,14 @@ const Admin: React.FC = () => {
                 <Users className="w-4 h-4" />
                 Praktik Budaya
               </Button>
+              <Button
+                variant={activeTab === "reviews" ? "default" : "ghost"}
+                onClick={() => setActiveTab("reviews")}
+                className="flex items-center gap-2"
+              >
+                <MessageSquare className="w-4 h-4" />
+                Moderasi Ulasan
+              </Button>
             </nav>
           </div>
         </Card>
@@ -68,6 +77,7 @@ const Admin: React.FC = () => {
         {activeTab === "sites" && <SitesManagement />}
         {activeTab === "categories" && <CategoriesManagement />}
         {activeTab === "practices" && <CulturalPracticesManagement />}
+        {activeTab === "reviews" && <ReviewsModeration />}
       </div>
     </div>
   );
