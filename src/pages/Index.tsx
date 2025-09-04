@@ -45,20 +45,6 @@ interface Category {
   color_hex: string;
 }
 
-interface RouteSite {
-  sites_with_categories: {
-    id: string;
-    name: string;
-    local_name: string;
-    latitude: number;
-    longitude: number;
-    category_name: string;
-    category_color: string;
-    cultural_significance_score: number;
-  };
-  sequence_order: number;
-}
-
 const Index = () => {
   const [sites, setSites] = useState<CulturalSite[]>([]);
   const [routes, setRoutes] = useState<RouteWithSites[]>([]);

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import Papa from "papaparse";
 
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,7 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
-import { MapPin, Image as ImageIcon, Edit, Trash2, Plus, Search, Filter } from "lucide-react";
+import { MapPin, Image as ImageIcon, Edit, Trash2, Plus, Search, Filter, Download } from "lucide-react";
 import { classifyImage } from "@/lib/cnn";
 
 // Import services
@@ -79,6 +80,17 @@ const SitesManagement: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("");
   const [siteFormOpen, setSiteFormOpen] = useState(false);
+  const [csvImportOpen, setCsvImportOpen] = useState(false);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [csvData, setCsvData] = useState<any[]>([]);
+  const [csvErrors, setCsvErrors] = useState<string[]>([]);
+  const [importingCsv, setImportingCsv] = useState(false);
+  const [selectedSites, setSelectedSites] = useState<string[]>([]);
+  const [bulkEditOpen, setBulkEditOpen] = useState(false);
+  const [bulkEditData, setBulkEditData] = useState({
+    category_id: '',
+    is_active: null as boolean | null,
+  });
 
   // Map refs
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -355,6 +367,226 @@ const SitesManagement: React.FC = () => {
     }
   };
 
+  const handleParseCsv = () => {
+    if (!csvFile) return;
+
+    Papa.parse(csvFile, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (results) => {
+        const errors: string[] = [];
+        const validData: any[] = [];
+
+        results.data.forEach((row: any, index: number) => {
+          // Validate required fields
+          if (!row.name || row.name.trim() === '') {
+            errors.push(`Baris ${index + 2}: Nama situs wajib diisi`);
+            return;
+          }
+
+          if (!row.category_id || row.category_id.trim() === '') {
+            errors.push(`Baris ${index + 2}: Category ID wajib diisi`);
+            return;
+          }
+
+          // Validate latitude and longitude
+          const lat = parseFloat(row.latitude);
+          const lng = parseFloat(row.longitude);
+          if (isNaN(lat) || lat < -90 || lat > 90) {
+            errors.push(`Baris ${index + 2}: Latitude tidak valid (${row.latitude})`);
+            return;
+          }
+          if (isNaN(lng) || lng < -180 || lng > 180) {
+            errors.push(`Baris ${index + 2}: Longitude tidak valid (${row.longitude})`);
+            return;
+          }
+
+          // Validate entrance fee
+          const fee = parseFloat(row.entrance_fee);
+          if (isNaN(fee) || fee < 0) {
+            errors.push(`Baris ${index + 2}: Biaya masuk tidak valid (${row.entrance_fee})`);
+            return;
+          }
+
+          // Validate established year if provided
+          if (row.established_year && row.established_year.trim() !== '') {
+            const year = parseInt(row.established_year);
+            if (isNaN(year) || year < 1000 || year > new Date().getFullYear()) {
+              errors.push(`Baris ${index + 2}: Tahun berdiri tidak valid (${row.established_year})`);
+              return;
+            }
+          }
+
+          // Add validated data
+          validData.push({
+            name: row.name.trim(),
+            local_name: row.local_name?.trim() || null,
+            description: row.description?.trim() || null,
+            category_id: row.category_id.trim(),
+            latitude: lat,
+            longitude: lng,
+            visiting_hours: row.visiting_hours?.trim() || null,
+            entrance_fee: fee,
+            village: row.village?.trim() || null,
+            district: row.district?.trim() || null,
+            established_year: row.established_year && row.established_year.trim() !== '' ? parseInt(row.established_year) : null,
+            created_by: userId,
+            is_active: true,
+          });
+        });
+
+        setCsvData(validData);
+        setCsvErrors(errors);
+      },
+      error: (error) => {
+        toast({
+          title: "Gagal parse CSV",
+          description: error.message,
+          variant: "destructive",
+        });
+      },
+    });
+  };
+
+  const handleImportCsv = async () => {
+    if (csvData.length === 0 || !userId) return;
+
+    setImportingCsv(true);
+    let successCount = 0;
+    let errorCount = 0;
+
+    try {
+      for (const siteData of csvData) {
+        try {
+          await CulturalSitesService.createSite(siteData);
+          successCount++;
+        } catch (error: any) {
+          console.error('Error importing site:', siteData.name, error);
+          errorCount++;
+        }
+      }
+
+      toast({
+        title: "Import selesai",
+        description: `${successCount} situs berhasil diimport${errorCount > 0 ? `, ${errorCount} gagal` : ''}`,
+        variant: errorCount > 0 ? "destructive" : "default",
+      });
+
+      // Refresh sites list
+      await loadSites();
+
+      // Reset state
+      setCsvImportOpen(false);
+      setCsvFile(null);
+      setCsvData([]);
+      setCsvErrors([]);
+    } catch (error: any) {
+      console.error('Import error:', error);
+      toast({
+        title: "Gagal import",
+        description: error?.message || "Terjadi kesalahan saat import data",
+        variant: "destructive",
+      });
+    } finally {
+      setImportingCsv(false);
+    }
+  };
+
+  const handleBulkEdit = async () => {
+    if (selectedSites.length === 0) return;
+
+    try {
+      const updates: any = {};
+      if (bulkEditData.category_id) {
+        updates.category_id = bulkEditData.category_id;
+      }
+      if (bulkEditData.is_active !== null) {
+        updates.is_active = bulkEditData.is_active;
+      }
+
+      if (Object.keys(updates).length === 0) {
+        toast({
+          title: "Tidak ada perubahan",
+          description: "Pilih setidaknya satu field untuk diubah",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Update each selected site
+      for (const siteId of selectedSites) {
+        await CulturalSitesService.updateSite(siteId, updates);
+      }
+
+      toast({
+        title: "Berhasil",
+        description: `${selectedSites.length} situs berhasil diperbarui`,
+      });
+
+      // Reset state and refresh
+      setBulkEditOpen(false);
+      setSelectedSites([]);
+      setBulkEditData({ category_id: '', is_active: null });
+      await loadSites();
+    } catch (error: any) {
+      console.error('Bulk edit error:', error);
+      toast({
+        title: "Gagal edit massal",
+        description: error?.message || "Terjadi kesalahan saat memperbarui situs",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleExportCsv = () => {
+    if (filteredSites.length === 0) {
+      toast({
+        title: "Tidak ada data",
+        description: "Tidak ada situs yang dapat diekspor",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Prepare CSV data
+    const csvData = filteredSites.map(site => ({
+      name: site.name || '',
+      local_name: site.local_name || '',
+      description: site.description || '',
+      category_id: site.category_id || '',
+      category_name: site.category_name || '',
+      latitude: site.latitude || '',
+      longitude: site.longitude || '',
+      visiting_hours: site.visiting_hours || '',
+      entrance_fee: site.entrance_fee || '',
+      village: site.village || '',
+      district: site.district || '',
+      established_year: site.established_year || '',
+      is_active: site.is_active ? 'true' : 'false',
+      created_at: site.created_at || '',
+      updated_at: site.updated_at || '',
+    }));
+
+    // Convert to CSV using PapaParse
+    const csv = Papa.unparse(csvData);
+
+    // Create and download file
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `cultural-sites-export-${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    toast({
+      title: "Berhasil",
+      description: `${filteredSites.length} situs berhasil diekspor ke CSV`,
+    });
+  };
+
   // Filter sites based on search and category
   const filteredSites = sites.filter(site => {
     const matchesSearch = !searchQuery ||
@@ -373,10 +605,32 @@ const SitesManagement: React.FC = () => {
       <Card className="p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold">Daftar Situs Budaya</h2>
-          <Button onClick={handleAddSite}>
-            <Plus className="w-4 h-4 mr-2" />
-            Tambah Situs Baru
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setCsvImportOpen(true)}
+              disabled={selectedSites.length > 0}
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Import CSV
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setBulkEditOpen(true)}
+              disabled={selectedSites.length === 0}
+            >
+              <Edit className="w-4 h-4 mr-2" />
+              Edit Massal ({selectedSites.length})
+            </Button>
+            <Button variant="outline" onClick={handleExportCsv}>
+              <Download className="w-4 h-4 mr-2" />
+              Export CSV
+            </Button>
+            <Button onClick={handleAddSite}>
+              <Plus className="w-4 h-4 mr-2" />
+              Tambah Situs Baru
+            </Button>
+          </div>
         </div>
 
         {/* Search and Filter */}
@@ -419,6 +673,20 @@ const SitesManagement: React.FC = () => {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-12">
+                    <input
+                      type="checkbox"
+                      checked={selectedSites.length === filteredSites.length && filteredSites.length > 0}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedSites(filteredSites.map(site => site.id!));
+                        } else {
+                          setSelectedSites([]);
+                        }
+                      }}
+                      className="rounded"
+                    />
+                  </TableHead>
                   <TableHead>Nama</TableHead>
                   <TableHead>Kategori</TableHead>
                   <TableHead>Lokasi</TableHead>
@@ -429,6 +697,20 @@ const SitesManagement: React.FC = () => {
               <TableBody>
                 {filteredSites.map((site) => (
                   <TableRow key={site.id}>
+                    <TableCell>
+                      <input
+                        type="checkbox"
+                        checked={selectedSites.includes(site.id!)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedSites(prev => [...prev, site.id!]);
+                          } else {
+                            setSelectedSites(prev => prev.filter(id => id !== site.id));
+                          }
+                        }}
+                        className="rounded"
+                      />
+                    </TableCell>
                     <TableCell className="font-medium">
                       <div>
                         <div className="font-semibold">{site.name}</div>
@@ -839,6 +1121,177 @@ const SitesManagement: React.FC = () => {
               onClick={() => siteToDelete && handleDeleteSite(siteToDelete)}
             >
               Hapus
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* CSV Import Dialog */}
+      <Dialog open={csvImportOpen} onOpenChange={setCsvImportOpen}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Import Situs Budaya dari CSV</DialogTitle>
+            <DialogDescription>
+              Upload file CSV dengan data situs budaya. Pastikan format sesuai dengan template.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="csv-file">Pilih File CSV</Label>
+              <Input
+                id="csv-file"
+                type="file"
+                accept=".csv"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    setCsvFile(file);
+                    setCsvData([]);
+                    setCsvErrors([]);
+                  }
+                }}
+              />
+            </div>
+
+            {csvFile && (
+              <div className="space-y-2">
+                <Button
+                  onClick={() => handleParseCsv()}
+                  disabled={!csvFile}
+                >
+                  Parse CSV
+                </Button>
+              </div>
+            )}
+
+            {csvErrors.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-sm font-medium text-destructive">Error Validasi:</h4>
+                <div className="max-h-32 overflow-y-auto space-y-1">
+                  {csvErrors.map((error, index) => (
+                    <p key={index} className="text-sm text-destructive">{error}</p>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {csvData.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-sm font-medium">Preview Data ({csvData.length} baris):</h4>
+                <div className="max-h-64 overflow-y-auto border rounded-md">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Nama</TableHead>
+                        <TableHead>Kategori</TableHead>
+                        <TableHead>Lokasi</TableHead>
+                        <TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {csvData.slice(0, 5).map((row, index) => (
+                        <TableRow key={index}>
+                          <TableCell>{row.name || '-'}</TableCell>
+                          <TableCell>{row.category_name || '-'}</TableCell>
+                          <TableCell>{row.village || row.district ? `${row.village || ''} ${row.district || ''}`.trim() : '-'}</TableCell>
+                          <TableCell>
+                            <Badge variant={row.is_active ? "default" : "secondary"}>
+                              {row.is_active ? "Aktif" : "Tidak Aktif"}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  {csvData.length > 5 && (
+                    <p className="text-sm text-muted-foreground p-2">
+                      ... dan {csvData.length - 5} baris lainnya
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="text-sm text-muted-foreground">
+              <p><strong>Format CSV yang diharapkan:</strong></p>
+              <p>Header: name,local_name,description,category_id,latitude,longitude,visiting_hours,entrance_fee,village,district,established_year</p>
+              <p>Contoh: "Desa Sade","Sade","Deskripsi...", "uuid-kategori", -8.65, 116.32, "08:00-17:00", 5000, "Sade", "Lombok Tengah", 1800</p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCsvImportOpen(false)}>
+              Batal
+            </Button>
+            <Button
+              onClick={handleImportCsv}
+              disabled={csvData.length === 0 || csvErrors.length > 0 || importingCsv}
+            >
+              {importingCsv ? "Mengimport..." : `Import ${csvData.length} Situs`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Edit Dialog */}
+      <Dialog open={bulkEditOpen} onOpenChange={setBulkEditOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Massal Situs Budaya</DialogTitle>
+            <DialogDescription>
+              Edit {selectedSites.length} situs yang dipilih. Kosongkan field yang tidak ingin diubah.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="bulk-category">Kategori Baru</Label>
+              <Select
+                value={bulkEditData.category_id}
+                onValueChange={(value) => setBulkEditData(prev => ({ ...prev, category_id: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih kategori baru" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Tidak diubah</SelectItem>
+                  {categories.map((category) => (
+                    <SelectItem key={category.id} value={category.id}>
+                      {category.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label htmlFor="bulk-status">Status Aktif</Label>
+              <Select
+                value={bulkEditData.is_active === null ? '' : bulkEditData.is_active.toString()}
+                onValueChange={(value) => setBulkEditData(prev => ({
+                  ...prev,
+                  is_active: value === '' ? null : value === 'true'
+                }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih status baru" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Tidak diubah</SelectItem>
+                  <SelectItem value="true">Aktif</SelectItem>
+                  <SelectItem value="false">Tidak Aktif</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkEditOpen(false)}>
+              Batal
+            </Button>
+            <Button onClick={handleBulkEdit}>
+              Terapkan Perubahan
             </Button>
           </DialogFooter>
         </DialogContent>

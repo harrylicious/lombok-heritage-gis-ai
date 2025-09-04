@@ -75,34 +75,34 @@ Mengintegrasikan CNN (Convolutional Neural Network) unt
 ## 4. Dashboard dan Analytics
 
 ### 4.1 Admin Dashboard
-- [ ] Summary cards (total sites, categories, reviews, etc.)
-- [ ] Charts untuk distribution berdasarkan categories
-- [ ] Recent activities feed
-- [ ] Quick stats dengan real-time data
+- [x] Summary cards (total sites, categories, reviews, etc.)
+- [x] Charts untuk distribution berdasarkan categories
+- [x] Recent activities feed
+- [x] Quick stats dengan real-time data
 
 ### 4.2 Tourism Routes Management
-- [ ] Create new tourism route
-- [ ] Add/remove sites dari route
-- [ ] Reorder sites dalam route
-- [ ] Route preview pada map
+- [x] Create new tourism route
+- [x] Add/remove sites dari route
+- [x] Reorder sites dalam route
+- [x] Route preview pada map
 
 ### 4.3 Conservation Projects
-- [ ] List conservation projects
-- [ ] Link projects dengan cultural sites
-- [ ] Project status tracking
-- [ ] Timeline view untuk project progress
+- [x] List conservation projects
+- [x] Link projects dengan cultural sites
+- [x] Project status tracking
+- [x] Timeline view untuk project progress
 
 ## 5. Data Management
 
 ### 5.1 Bulk Operations
-- [ ] CSV import untuk cultural sites
-- [ ] Bulk edit multiple sites
-- [ ] Export data ke CSV/Excel
-- [ ] Data validation untuk imports
+- [x] CSV import untuk cultural sites
+- [x] Bulk edit multiple sites
+- [x] Export data ke CSV/Excel
+- [x] Data validation untuk imports
 
 ### 5.2 Historical Records
-- [ ] Management historical records table
-- [ ] Timeline view untuk site history
+- [x] Management historical records table
+- [x] Timeline view untuk site history
 - [ ] Version control untuk data changes
 - [ ] Audit log untuk admin actions
 
