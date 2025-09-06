@@ -3,15 +3,18 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Search, Filter, Map, Grid3X3, Brain, MapPin, Sparkles } from 'lucide-react';
+import { Search, Filter, Map, Grid3X3, Brain, MapPin, Sparkles, Route, Star } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Link } from 'react-router-dom';
+import { CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 
 import HeroBanner from '@/components/HeroBanner';
 import SiteCard from '@/components/SiteCard';
 import CategoryFilter from '@/components/CategoryFilter';
 import MapView from '@/components/MapView';
+import { TourismRoutesService, RouteWithSites } from '@/services/tourism-routes.service';
 
 interface CulturalSite {
   id: string;
@@ -44,6 +47,7 @@ interface Category {
 
 const Index = () => {
   const [sites, setSites] = useState<CulturalSite[]>([]);
+  const [routes, setRoutes] = useState<RouteWithSites[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [filteredSites, setFilteredSites] = useState<CulturalSite[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -86,41 +90,56 @@ const Index = () => {
     try {
       setLoading(true);
 
-      // Fetch cultural sites with category information
-      const { data: sitesData, error: sitesError } = await supabase
-        .from('sites_with_categories')
-        .select('*')
-        .order('cultural_significance_score', { ascending: false });
+      // Fetch data in parallel
+      const [sitesResult, categoriesResult, routesResult] = await Promise.allSettled([
+        supabase
+          .from('sites_with_categories')
+          .select('*')
+          .order('cultural_significance_score', { ascending: false }),
+        supabase
+          .from('heritage_categories')
+          .select('*')
+          .order('name'),
+        TourismRoutesService.fetchAllRoutes()
+      ]);
 
-      if (sitesError) {
-        console.error('Error fetching sites:', sitesError);
-        toast({
-          title: "Error",
-          description: "Gagal memuat data situs budaya",
-          variant: "destructive",
-        });
-        return;
+      // Handle sites data
+      if (sitesResult.status === 'fulfilled') {
+        const { data: sitesData, error: sitesError } = sitesResult.value;
+        if (sitesError) {
+          console.error('Error fetching sites:', sitesError);
+          toast({
+            title: "Error",
+            description: "Gagal memuat data situs budaya",
+            variant: "destructive",
+          });
+        } else {
+          setSites(sitesData || []);
+        }
       }
 
-      // Fetch categories
-      const { data: categoriesData, error: categoriesError } = await supabase
-        .from('heritage_categories')
-        .select('*')
-        .order('name');
-
-      if (categoriesError) {
-        console.error('Error fetching categories:', categoriesError);
-        toast({
-          title: "Error",
-          description: "Gagal memuat data kategori",
-          variant: "destructive",
-        });
-        return;
+      // Handle categories data
+      if (categoriesResult.status === 'fulfilled') {
+        const { data: categoriesData, error: categoriesError } = categoriesResult.value;
+        if (categoriesError) {
+          console.error('Error fetching categories:', categoriesError);
+          toast({
+            title: "Error",
+            description: "Gagal memuat data kategori",
+            variant: "destructive",
+          });
+        } else {
+          setCategories(categoriesData || []);
+        }
       }
 
-      setSites(sitesData || []);
-      setCategories(categoriesData || []);
-      
+      // Handle routes data
+      if (routesResult.status === 'fulfilled') {
+        setRoutes(routesResult.value);
+      } else {
+        console.error('Error fetching routes:', routesResult.reason);
+      }
+
     } catch (error) {
       console.error('Unexpected error:', error);
       toast({
@@ -166,7 +185,7 @@ const Index = () => {
         {/* Navigation Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <Card className="p-4 bg-background/80 backdrop-blur-sm shadow-cultural">
-            <TabsList className="grid w-full grid-cols-3 bg-muted/50">
+            <TabsList className="grid w-full grid-cols-4 bg-muted/50">
               <TabsTrigger value="overview" className="flex items-center gap-2">
                 <Sparkles className="w-4 h-4" />
                 Beranda
@@ -174,6 +193,10 @@ const Index = () => {
               <TabsTrigger value="explore" className="flex items-center gap-2">
                 <Grid3X3 className="w-4 h-4" />
                 Jelajahi
+              </TabsTrigger>
+              <TabsTrigger value="routes" className="flex items-center gap-2">
+                <Route className="w-4 h-4" />
+                Rute Wisata
               </TabsTrigger>
               <TabsTrigger value="map" className="flex items-center gap-2">
                 <Map className="w-4 h-4" />
@@ -197,7 +220,7 @@ const Index = () => {
             />
 
             {/* Quick Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
               <Card className="p-6 bg-gradient-to-br from-heritage to-heritage/80 text-heritage-foreground shadow-heritage">
                 <div className="flex items-center gap-4">
                   <MapPin className="w-10 h-10" />
@@ -207,7 +230,17 @@ const Index = () => {
                   </div>
                 </div>
               </Card>
-              
+
+              <Card className="p-6 bg-gradient-to-br from-blue-600 to-blue-600/80 text-white shadow-heritage">
+                <div className="flex items-center gap-4">
+                  <Route className="w-10 h-10" />
+                  <div>
+                    <div className="text-2xl font-bold">{routes.length}</div>
+                    <div className="text-blue-100">Rute Wisata</div>
+                  </div>
+                </div>
+              </Card>
+
               <Card className="p-6 bg-gradient-to-br from-accent to-accent/80 text-accent-foreground shadow-heritage">
                 <div className="flex items-center gap-4">
                   <Brain className="w-10 h-10" />
@@ -219,7 +252,7 @@ const Index = () => {
                   </div>
                 </div>
               </Card>
-              
+
               <Card className="p-6 bg-gradient-to-br from-primary to-primary-glow text-primary-foreground shadow-heritage">
                 <div className="flex items-center gap-4">
                   <Filter className="w-10 h-10" />
@@ -248,6 +281,55 @@ const Index = () => {
                 ))}
               </div>
             </Card>
+
+            {/* Featured Routes */}
+            {routes.length > 0 && (
+              <Card className="p-6">
+                <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
+                  <Route className="w-6 h-6 text-heritage" />
+                  Rute Wisata Unggulan
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {routes.slice(0, 2).map((route) => {
+                    const stats = TourismRoutesService.calculateRouteStats(route);
+                    return (
+                      <Card key={route.id} className="hover:shadow-heritage transition-all duration-300">
+                        <CardContent className="p-4">
+                          <div className="flex items-start gap-4">
+                            <div className="w-12 h-12 bg-heritage/10 rounded-lg flex items-center justify-center">
+                              <Route className="w-6 h-6 text-heritage" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <h3 className="font-semibold text-lg mb-1">{route.name}</h3>
+                              <p className="text-sm text-muted-foreground line-clamp-2 mb-3">
+                                {route.description}
+                              </p>
+                              <div className="flex items-center gap-4 text-sm text-muted-foreground mb-3">
+                                <span>{stats.totalSites} situs</span>
+                                <span>{stats.totalDuration} menit</span>
+                                <span>{stats.totalDistance} KM</span>
+                              </div>
+                              <Link to={`/route/${route.id}`}>
+                                <Button size="sm" className="w-full">
+                                  Jelajahi Rute
+                                </Button>
+                              </Link>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+                <div className="mt-4 text-center">
+                  <Link to="#routes" onClick={() => setActiveTab('routes')}>
+                    <Button variant="outline">
+                      Lihat Semua Rute Wisata
+                    </Button>
+                  </Link>
+                </div>
+              </Card>
+            )}
           </TabsContent>
 
           {/* Explore Tab */}
@@ -314,12 +396,100 @@ const Index = () => {
             </div>
           </TabsContent>
 
+          {/* Routes Tab */}
+          <TabsContent value="routes" className="space-y-6">
+            <div className="space-y-6">
+              <div className="text-center">
+                <h2 className="text-3xl font-bold mb-4 flex items-center justify-center gap-3">
+                  <Route className="w-8 h-8 text-heritage" />
+                  Rute Wisata Lombok
+                </h2>
+                <p className="text-muted-foreground max-w-2xl mx-auto">
+                  Jelajahi warisan budaya Sasak melalui rute wisata yang telah dirancang khusus.
+                  Setiap rute menawarkan pengalaman unik mengunjungi situs-situs bersejarah dengan panduan yang terstruktur.
+                </p>
+              </div>
+
+              {routes.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {routes.map((route) => {
+                    const stats = TourismRoutesService.calculateRouteStats(route);
+                    return (
+                      <Card key={route.id} className="hover:shadow-heritage transition-all duration-300 hover:scale-[1.02]">
+                        <CardContent className="p-6">
+                          <div className="flex items-start justify-between mb-4">
+                            <div className="flex-1">
+                              <h3 className="font-semibold text-lg mb-2">{route.name}</h3>
+                              <p className="text-sm text-muted-foreground line-clamp-2 mb-3">
+                                {route.description}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Route Stats */}
+                          <div className="grid grid-cols-2 gap-4 mb-4">
+                            <div className="text-center">
+                              <div className="text-2xl font-bold text-heritage">{stats.totalSites}</div>
+                              <div className="text-xs text-muted-foreground">Situs</div>
+                            </div>
+                            <div className="text-center">
+                              <div className="text-2xl font-bold text-blue-600">{stats.totalDuration}</div>
+                              <div className="text-xs text-muted-foreground">Menit</div>
+                            </div>
+                          </div>
+
+                          {/* Route Info */}
+                          <div className="space-y-2 mb-4 text-sm">
+                            <div className="flex items-center gap-2">
+                              <Map className="w-4 h-4 text-muted-foreground" />
+                              <span>{stats.totalDistance} KM</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Star className="w-4 h-4 text-yellow-500" />
+                              <span>Rating: {stats.averageRating}/10</span>
+                            </div>
+                          </div>
+
+                          {/* Route Type & Difficulty */}
+                          <div className="flex flex-wrap gap-2 mb-4">
+                            <Badge variant="secondary" className="text-xs">
+                              {route.difficulty_level}
+                            </Badge>
+                            <Badge variant="outline" className="text-xs">
+                              {route.route_type}
+                            </Badge>
+                          </div>
+
+                          <Link to={`/route/${route.id}`}>
+                            <Button className="w-full">
+                              <Route className="w-4 h-4 mr-2" />
+                              Lihat Rute Detail
+                            </Button>
+                          </Link>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              ) : (
+                <Card className="p-12 text-center">
+                  <Route className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold mb-2">Belum ada rute wisata</h3>
+                  <p className="text-muted-foreground">
+                    Rute wisata akan segera ditambahkan untuk memudahkan Anda menjelajahi warisan budaya Sasak.
+                  </p>
+                </Card>
+              )}
+            </div>
+          </TabsContent>
+
           {/* Map Tab */}
           <TabsContent value="map" className="space-y-6">
             <Card className="p-4">
               <div className="h-[70vh]">
-                <MapView 
+                <MapView
                   sites={filteredSites}
+                  routes={routes}
                   selectedSite={selectedSite}
                   onSiteSelect={setSelectedSite}
                 />

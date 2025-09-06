@@ -1,37 +1,42 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import 'leaflet.heat';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { MapPin, Star, Clock, DollarSign } from 'lucide-react';
+import { MapPin, Layers, Route as RouteIcon, Target } from 'lucide-react';
 import type { Json } from '@/integrations/supabase/types';
+import { SpatialAnalysisService, BufferZone, SpatialOverlay } from '@/services/spatial-analysis.service';
+import { Database } from '@/integrations/supabase/types';
 
 // Fix Leaflet default markers
-delete (L.Icon.Default.prototype as any)._getIconUrl;
+delete (L.Icon.Default.prototype as unknown as { _getIconUrl: unknown })._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
   iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
 });
 
-interface CulturalSite {
-  id: string;
-  name: string;
-  local_name: string;
-  description: string;
-  latitude: number;
-  longitude: number;
-  category_name: string;
-  category_color: string;
-  preservation_status: string;
-  cultural_significance_score: number;
-  tourism_popularity_score: number;
-  visiting_hours: string;
-  entrance_fee: number;
-  village: string;
-  district: string;
+// Declare HeatLayer type for leaflet.heat plugin
+declare module 'leaflet' {
+  interface HeatLayer extends Layer {
+    setLatLngs(latlngs: [number, number, number][]): this;
+    setOptions(options: HeatLayerOptions): this;
+  }
+
+  interface HeatLayerOptions {
+    radius?: number;
+    blur?: number;
+    maxZoom?: number;
+    max?: number;
+    gradient?: { [key: number]: string };
+  }
+
+  function heatLayer(latlngs: [number, number, number][], options?: HeatLayerOptions): HeatLayer;
 }
+
+type SiteWithCategory = Database['public']['Views']['sites_with_categories']['Row'];
 
 interface RouteWithSites {
   id: string;
@@ -52,18 +57,34 @@ interface RouteWithSites {
   }>;
 }
 
-interface MapViewProps {
-  sites?: CulturalSite[];
+interface EnhancedMapViewProps {
+  sites?: SiteWithCategory[];
   routes?: RouteWithSites[];
-  selectedSite?: CulturalSite | null;
-  onSiteSelect?: (site: CulturalSite) => void;
+  selectedSite?: SiteWithCategory | null;
+  onSiteSelect?: (site: SiteWithCategory) => void;
+  bufferZones?: BufferZone[];
+  overlays?: SpatialOverlay[];
+  generatedRoute?: [number, number][];
+  className?: string;
 }
 
-const MapView: React.FC<MapViewProps> = ({ sites = [], routes = [], selectedSite, onSiteSelect }) => {
+const EnhancedMapView: React.FC<EnhancedMapViewProps> = ({
+  sites = [],
+  routes = [],
+  selectedSite,
+  onSiteSelect,
+  bufferZones = [],
+  overlays = [],
+  generatedRoute = [],
+  className
+}) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const markers = useRef<L.Marker[]>([]);
   const routeLayers = useRef<L.Polyline[]>([]);
+  const bufferLayers = useRef<L.Circle[]>([]);
+  const overlayLayers = useRef<L.LayerGroup[]>([]);
+  const generatedRouteLayer = useRef<L.Polyline | null>(null);
 
   // Lombok center coordinates
   const LOMBOK_CENTER: [number, number] = [-8.6500, 116.3241];
@@ -104,6 +125,131 @@ const MapView: React.FC<MapViewProps> = ({ sites = [], routes = [], selectedSite
       }
     };
   }, []);
+
+  // Update buffer zones
+  useEffect(() => {
+    if (!map.current) return;
+
+    // Clear existing buffer layers
+    bufferLayers.current.forEach(layer => {
+      map.current?.removeLayer(layer);
+    });
+    bufferLayers.current = [];
+
+    // Add new buffer zones
+    bufferZones.forEach(zone => {
+      const bufferLayer = L.circle(zone.center, {
+        color: zone.color,
+        fillColor: zone.color,
+        fillOpacity: 0.2,
+        weight: 2,
+        radius: zone.radius
+      }).addTo(map.current!);
+
+      // Add popup to buffer zone
+      bufferLayer.bindPopup(`
+        <div class="p-2">
+          <h3 class="font-semibold">${zone.siteName}</h3>
+          <p class="text-sm text-muted-foreground">Buffer Zone: ${zone.radius}m radius</p>
+        </div>
+      `);
+
+      bufferLayers.current.push(bufferLayer);
+    });
+  }, [bufferZones]);
+
+  // Update overlays
+  useEffect(() => {
+    if (!map.current) return;
+
+    // Clear existing overlay layers
+    overlayLayers.current.forEach(layer => {
+      map.current?.removeLayer(layer);
+    });
+    overlayLayers.current = [];
+
+    // Add new overlays
+    overlays.forEach(overlay => {
+      if (!overlay.visible) return;
+
+      const overlayGroup = L.layerGroup();
+
+      // For now, add placeholder overlays
+      // In production, this would parse actual GeoJSON data
+      if (overlay.type === 'roads') {
+        // Add road-like lines as placeholders
+        const roadLine = L.polyline([
+          [LOMBOK_CENTER[0] - 0.1, LOMBOK_CENTER[1] - 0.1],
+          [LOMBOK_CENTER[0] + 0.1, LOMBOK_CENTER[1] + 0.1]
+        ], {
+          color: '#666',
+          weight: 3,
+          opacity: overlay.opacity
+        });
+        overlayGroup.addLayer(roadLine);
+      } else if (overlay.type === 'rivers') {
+        // Add river-like lines as placeholders
+        const riverLine = L.polyline([
+          [LOMBOK_CENTER[0] - 0.05, LOMBOK_CENTER[1] - 0.15],
+          [LOMBOK_CENTER[0] + 0.05, LOMBOK_CENTER[1] + 0.15]
+        ], {
+          color: '#0066cc',
+          weight: 4,
+          opacity: overlay.opacity
+        });
+        overlayGroup.addLayer(riverLine);
+      } else if (overlay.type === 'villages') {
+        // Add village markers as placeholders
+        const villageMarker = L.marker([LOMBOK_CENTER[0] + 0.02, LOMBOK_CENTER[1] + 0.02], {
+          icon: L.divIcon({
+            className: 'village-marker',
+            html: '<div style="background-color: #8B4513; width: 8px; height: 8px; border-radius: 50%; border: 1px solid white;"></div>',
+            iconSize: [8, 8],
+            iconAnchor: [4, 4]
+          })
+        });
+        overlayGroup.addLayer(villageMarker);
+      }
+
+      overlayGroup.addTo(map.current!);
+      overlayLayers.current.push(overlayGroup);
+    });
+  }, [overlays]);
+
+  // Update generated route
+  useEffect(() => {
+    if (!map.current) return;
+
+    // Clear existing generated route
+    if (generatedRouteLayer.current) {
+      map.current.removeLayer(generatedRouteLayer.current);
+      generatedRouteLayer.current = null;
+    }
+
+    // Add new generated route
+    if (generatedRoute.length > 1) {
+      generatedRouteLayer.current = L.polyline(generatedRoute, {
+        color: '#ff6b35',
+        weight: 4,
+        opacity: 0.8,
+        dashArray: '10, 10'
+      }).addTo(map.current);
+
+      // Add numbered markers for route points
+      generatedRoute.forEach((point, index) => {
+        const marker = L.marker(point, {
+          icon: L.divIcon({
+            className: 'route-point-marker',
+            html: `<div style="background-color: #ff6b35; color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px; border: 2px solid white;">${index + 1}</div>`,
+            iconSize: [24, 24],
+            iconAnchor: [12, 12]
+          })
+        }).addTo(map.current!);
+
+        markers.current.push(marker);
+      });
+    }
+  }, [generatedRoute]);
 
   // Update markers and routes when sites or routes change
   useEffect(() => {
@@ -168,7 +314,7 @@ const MapView: React.FC<MapViewProps> = ({ sites = [], routes = [], selectedSite
           })
             .addTo(map.current!)
             .on('click', () => {
-              onSiteSelect?.(site);
+              onSiteSelect?.(site as SiteWithCategory);
             });
 
           // Create custom popup content
@@ -211,7 +357,7 @@ const MapView: React.FC<MapViewProps> = ({ sites = [], routes = [], selectedSite
       );
 
       if (!isInRoute) {
-        const marker = L.marker([site.latitude, site.longitude])
+        const marker = L.marker([site.latitude!, site.longitude!])
           .addTo(map.current!)
           .on('click', () => {
             onSiteSelect?.(site);
@@ -234,7 +380,7 @@ const MapView: React.FC<MapViewProps> = ({ sites = [], routes = [], selectedSite
               </div>
               <div class="flex items-center gap-1">
                 <span class="text-muted-foreground">📍</span>
-                <span>${site.village}, ${site.district}</span>
+                <span>${site.village || 'Unknown'}, ${site.district || 'Unknown'}</span>
               </div>
             </div>
           </div>
@@ -249,11 +395,45 @@ const MapView: React.FC<MapViewProps> = ({ sites = [], routes = [], selectedSite
       }
     });
 
-    // Fit map to show all markers and routes
-    const allLayers = [...markers.current, ...routeLayers.current];
-    if (allLayers.length > 0) {
-      const group = L.featureGroup(allLayers);
-      map.current.fitBounds(group.getBounds().pad(0.1));
+    // Fit map to show all markers, routes, buffers, and overlays
+    const boundsLayers: L.Layer[] = [];
+
+    // Add markers (they have getLatLng)
+    boundsLayers.push(...markers.current);
+
+    // Add route layers (polylines have getBounds)
+    boundsLayers.push(...routeLayers.current);
+
+    // Add buffer layers (circles have getBounds)
+    boundsLayers.push(...bufferLayers.current);
+
+    // Add generated route (polyline has getBounds)
+    if (generatedRouteLayer.current) {
+      boundsLayers.push(generatedRouteLayer.current);
+    }
+
+    // For overlay layers, we need to get their individual components
+    overlayLayers.current.forEach(layerGroup => {
+      layerGroup.eachLayer(layer => {
+        // Only add layers that have bounds (markers, polylines, etc.)
+        if (layer instanceof L.Marker || layer instanceof L.Polyline || layer instanceof L.Polygon) {
+          boundsLayers.push(layer);
+        }
+      });
+    });
+
+    if (boundsLayers.length > 0) {
+      try {
+        const group = L.featureGroup(boundsLayers);
+        const bounds = group.getBounds();
+        if (bounds.isValid()) {
+          map.current.fitBounds(bounds.pad(0.1));
+        }
+      } catch (error) {
+        console.warn('Could not fit map bounds:', error);
+        // Fallback to default view
+        map.current.setView(LOMBOK_CENTER, 10);
+      }
     }
   }, [sites, routes, onSiteSelect]);
 
@@ -269,33 +449,41 @@ const MapView: React.FC<MapViewProps> = ({ sites = [], routes = [], selectedSite
 
     if (selectedMarker) {
       selectedMarker.openPopup();
-      map.current.setView([selectedSite.latitude, selectedSite.longitude], 14);
+      map.current.setView([selectedSite.latitude!, selectedSite.longitude!], 14);
     }
   }, [selectedSite]);
 
   return (
-    <div className="relative h-full w-full">
-      <div 
-        ref={mapContainer} 
+    <div className={`relative h-full w-full ${className}`}>
+      <div
+        ref={mapContainer}
         className="h-full w-full rounded-lg overflow-hidden shadow-cultural"
         style={{ minHeight: '400px' }}
       />
-      
+
       {/* Map Legend */}
-      <Card className="absolute top-4 right-4 p-4 bg-background/95 backdrop-blur-sm shadow-elegant">
-        <h4 className="font-semibold text-sm mb-2">Warisan Budaya Sasak</h4>
+      <Card className="absolute top-4 right-4 p-4 bg-background/95 backdrop-blur-sm shadow-elegant max-w-xs">
+        <h4 className="font-semibold text-sm mb-2">Spatial Analysis</h4>
         <div className="space-y-1 text-xs">
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 bg-heritage rounded-full"></div>
-            <span>Situs Bersejarah</span>
+            <span>Cultural Sites</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-accent rounded-full"></div>
-            <span>Pusat Kerajinan</span>
+            <div className="w-3 h-3 border-2 border-primary rounded-full bg-primary/20"></div>
+            <span>Buffer Zones</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-primary rounded-full"></div>
-            <span>Rumah Tradisional</span>
+            <div className="w-3 h-0.5 bg-orange-500 border-dashed border-t-2"></div>
+            <span>Generated Routes</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+            <span>Rivers</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 bg-gray-600 rounded-full"></div>
+            <span>Roads</span>
           </div>
         </div>
       </Card>
@@ -312,19 +500,15 @@ const MapView: React.FC<MapViewProps> = ({ sites = [], routes = [], selectedSite
                   {selectedSite.category_name}
                 </Badge>
                 <div className="flex items-center gap-1 text-sm">
-                  <Star className="w-4 h-4 text-heritage fill-current" />
+                  <MapPin className="w-4 h-4" />
                   <span>{selectedSite.cultural_significance_score}/10</span>
                 </div>
               </div>
             </div>
             <div className="flex flex-col sm:flex-row gap-2">
               <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                <Clock className="w-4 h-4" />
-                <span>{selectedSite.visiting_hours}</span>
-              </div>
-              <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                <DollarSign className="w-4 h-4" />
-                <span>{selectedSite.entrance_fee === 0 ? 'Gratis' : `Rp ${selectedSite.entrance_fee.toLocaleString()}`}</span>
+                <Target className="w-4 h-4" />
+                <span>{selectedSite.village}, {selectedSite.district}</span>
               </div>
             </div>
           </div>
@@ -334,4 +518,4 @@ const MapView: React.FC<MapViewProps> = ({ sites = [], routes = [], selectedSite
   );
 };
 
-export default MapView;
+export default EnhancedMapView;
