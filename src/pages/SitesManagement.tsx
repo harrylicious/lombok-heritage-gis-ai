@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -92,6 +92,18 @@ const SitesManagement: React.FC = () => {
     is_active: null as boolean | null,
   });
 
+  // Format visiting hours as 00.00 - 00.00
+  const formatVisitingHours = (value: string) => {
+    const digits = value.replace(/\D/g, '');
+    const maxLength = 8; // 00.00 - 00.00
+    const limitedDigits = digits.slice(0, maxLength);
+
+    if (limitedDigits.length <= 2) return limitedDigits;
+    if (limitedDigits.length <= 4) return `${limitedDigits.slice(0, 2)}.${limitedDigits.slice(2)}`;
+    if (limitedDigits.length <= 6) return `${limitedDigits.slice(0, 2)}.${limitedDigits.slice(2, 4)} - ${limitedDigits.slice(4)}`;
+    return `${limitedDigits.slice(0, 2)}.${limitedDigits.slice(2, 4)} - ${limitedDigits.slice(4, 6)}.${limitedDigits.slice(6)}`;
+  };
+
   // Map refs
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
@@ -118,6 +130,70 @@ const SitesManagement: React.FC = () => {
   useEffect(() => {
     loadInitialData();
   }, []);
+
+  // Initialize map when site form opens
+  useLayoutEffect(() => {
+    if (siteFormOpen && mapContainer.current && !map.current) {
+      // Get initial position
+      let lat: number;
+      let lng: number;
+      if (editingSite) {
+        lat = editingSite.latitude || -8.65;
+        lng = editingSite.longitude || 116.3241;
+      } else {
+        lat = form.getValues('latitude') || -8.65;
+        lng = form.getValues('longitude') || 116.3241;
+      }
+
+      // Initialize map
+      map.current = L.map(mapContainer.current).setView([lat, lng], 10);
+
+      // Add OpenStreetMap tiles
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors'
+      }).addTo(map.current);
+
+      // Add marker
+      marker.current = L.marker([lat, lng], { draggable: true }).addTo(map.current);
+
+      // Update form when marker is dragged
+      marker.current.on('dragend', (event) => {
+        const marker = event.target;
+        const position = marker.getLatLng();
+        form.setValue('latitude', position.lat);
+        form.setValue('longitude', position.lng);
+      });
+
+      // Update marker when clicking on map
+      map.current.on('click', (event) => {
+        const { lat, lng } = event.latlng;
+        if (marker.current) {
+          marker.current.setLatLng([lat, lng]);
+        } else {
+          marker.current = L.marker([lat, lng], { draggable: true }).addTo(map.current);
+        }
+        form.setValue('latitude', lat);
+        form.setValue('longitude', lng);
+      });
+    }
+
+    // Update marker position when editing existing site
+    if (siteFormOpen && map.current && marker.current && editingSite) {
+      const lat = editingSite.latitude || -8.65;
+      const lng = editingSite.longitude || 116.3241;
+      marker.current.setLatLng([lat, lng]);
+      map.current.setView([lat, lng], 10);
+    }
+
+    // Cleanup map when dialog closes
+    return () => {
+      if (!siteFormOpen && map.current) {
+        map.current.remove();
+        map.current = null;
+        marker.current = null;
+      }
+    };
+  }, [siteFormOpen, editingSite, form]);
 
   const loadInitialData = async () => {
     try {
@@ -215,6 +291,25 @@ const SitesManagement: React.FC = () => {
       established_year: undefined,
     });
     setExistingImages([]);
+
+    // Get current location
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          form.setValue('latitude', lat);
+          form.setValue('longitude', lng);
+          if (map.current && marker.current) {
+            marker.current.setLatLng([lat, lng]);
+            map.current.setView([lat, lng], 10);
+          }
+        },
+        (error) => {
+          console.error('Error getting location:', error);
+        }
+      );
+    }
   };
 
   const handleDeleteSite = async (siteId: string) => {
@@ -247,9 +342,27 @@ const SitesManagement: React.FC = () => {
       return;
     }
 
+    if (!userId) {
+      toast({
+        title: "Autentikasi diperlukan",
+        description: "Silakan login terlebih dahulu untuk upload gambar",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setUploadingImages(true);
     try {
-      await SiteMediaService.uploadImages(files, createdSiteId, userId!);
+      // Refresh authentication state to ensure user is still logged in
+      const { data: auth } = await import("@/integrations/supabase/client").then(({ supabase }) =>
+        supabase.auth.getUser()
+      );
+
+      if (!auth.user) {
+        throw new Error('User session expired. Please login again.');
+      }
+
+      await SiteMediaService.uploadImages(files, createdSiteId, userId);
       toast({
         title: "Berhasil",
         description: `${files.length} gambar berhasil diupload`,
@@ -891,7 +1004,14 @@ const SitesManagement: React.FC = () => {
                         <FormItem>
                           <FormLabel>Jam Kunjungan</FormLabel>
                           <FormControl>
-                            <Input placeholder="08.00 - 17.00" {...field} />
+                            <Input
+                              placeholder="08.00 - 17.00"
+                              {...field}
+                              onChange={(e) => {
+                                const formatted = formatVisitingHours(e.target.value);
+                                field.onChange(formatted);
+                              }}
+                            />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -973,7 +1093,7 @@ const SitesManagement: React.FC = () => {
                   <MapPin className="w-4 h-4 text-heritage" />
                   <h3 className="font-semibold">Pilih Titik Koordinat</h3>
                 </div>
-                <div ref={mapContainer} className="h-64 w-full rounded-md overflow-hidden shadow-cultural" />
+                <div ref={mapContainer} className="relative h-64 w-full rounded-md overflow-hidden shadow-cultural" style={{ height: '256px', width: '100%' }} />
                 <p className="text-xs text-muted-foreground mt-2">Klik pada peta untuk menentukan lokasi.</p>
               </Card>
 

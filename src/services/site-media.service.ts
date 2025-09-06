@@ -9,6 +9,10 @@ export class SiteMediaService {
    * Upload multiple images to Supabase Storage and link to site
    */
   static async uploadImages(files: FileList, siteId: string, userId: string): Promise<void> {
+    if (!userId) {
+      throw new Error('User must be authenticated to upload images');
+    }
+
     const fileArray = Array.from(files);
 
     for (const file of fileArray) {
@@ -17,14 +21,14 @@ export class SiteMediaService {
       const fileName = `${siteId}/${Date.now()}.${fileExt}`;
 
       const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('site-images')
+        .from('gallery')
         .upload(fileName, file);
 
       if (uploadError) throw uploadError;
 
       // Get public URL
       const { data: urlData } = supabase.storage
-        .from('site-images')
+        .from('gallery')
         .getPublicUrl(fileName);
 
       // Save to site_media table
@@ -72,7 +76,7 @@ export class SiteMediaService {
     const fileName = fileUrl.split('/').pop();
     if (fileName) {
       const { error: storageError } = await supabase.storage
-        .from('site-images')
+        .from('gallery')
         .remove([fileName]);
 
       if (storageError) {

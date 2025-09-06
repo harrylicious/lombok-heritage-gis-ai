@@ -175,12 +175,15 @@ const SiteDetail = () => {
       <div className="container mx-auto px-4 py-6 space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <Link to="/">
-            <Button variant="outline" size="sm">
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Kembali
-            </Button>
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link to="/">
+              <Button variant="outline" size="sm">
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                Kembali
+              </Button>
+            </Link>
+            <h1 className="text-lg font-semibold">{site.name}</h1>
+          </div>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={handleShare}>
               <Share2 className="w-4 h-4 mr-2" />
@@ -260,10 +263,9 @@ const SiteDetail = () => {
           <div className="lg:col-span-2">
             <Card className="p-6">
               <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                <TabsList className="grid w-full grid-cols-3">
+                <TabsList className="grid w-full grid-cols-2">
                   <TabsTrigger value="overview">Ringkasan</TabsTrigger>
                   <TabsTrigger value="gallery">Galeri</TabsTrigger>
-                  <TabsTrigger value="reviews">Ulasan ({reviews.length})</TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="overview" className="mt-6 space-y-6">
@@ -333,60 +335,49 @@ const SiteDetail = () => {
                     </div>
                   )}
                 </TabsContent>
-
-
-                <TabsContent value="reviews" className="mt-6">
-                  <div className="space-y-6">
-                    {/* Reviews Header */}
-                    <div className="flex items-center justify-between">
-                      <h2 className="text-2xl font-bold flex items-center gap-2">
-                        <MessageSquare className="w-6 h-6" />
-                        Ulasan Pengunjung
-                      </h2>
-                      {user && (
-                        <Button
-                          onClick={() => setActiveTab('reviews')}
-                          size="sm"
-                        >
-                          <Star className="w-4 h-4 mr-2" />
-                          Tulis Ulasan
-                        </Button>
-                      )}
-                    </div>
-
-                    {/* Reviews List */}
-                    <ReviewList reviews={reviews} loading={reviewsLoading} />
-
-                    {/* Write Review Form */}
-                    {user ? (
-                      <div className="pt-6 border-t">
-                        <h3 className="text-lg font-semibold mb-4">Tulis Ulasan Baru</h3>
-                        <ReviewForm
-                          siteId={id!}
-                          onReviewSubmitted={() => {
-                            fetchReviews();
-                            toast({
-                              title: "Review submitted",
-                              description: "Your review has been submitted for moderation.",
-                            });
-                          }}
-                        />
-                      </div>
-                    ) : (
-                      <Card className="p-6 text-center border-dashed">
-                        <Star className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                        <h3 className="text-lg font-semibold mb-2">Login untuk Memberikan Ulasan</h3>
-                        <p className="text-muted-foreground mb-4">
-                          Anda perlu login untuk memberikan ulasan pada situs ini.
-                        </p>
-                        <Link to="/auth">
-                          <Button>Login</Button>
-                        </Link>
-                      </Card>
-                    )}
-                  </div>
-                </TabsContent>
               </Tabs>
+
+              {/* Reviews Section */}
+              <div className="mt-8 pt-6 border-t space-y-6">
+                {/* Reviews Header */}
+                <div>
+                  <h2 className="text-2xl font-bold flex items-center gap-2">
+                    <MessageSquare className="w-6 h-6" />
+                    Ulasan Pengunjung
+                  </h2>
+                </div>
+
+                {/* Reviews List */}
+                <ReviewList reviews={reviews} loading={reviewsLoading} />
+
+                {/* Write Review Form */}
+                {user ? (
+                  <div className="pt-6 border-t">
+                    <h3 className="text-lg font-semibold mb-4">Tulis Ulasan Baru</h3>
+                    <ReviewForm
+                      siteId={id!}
+                      onReviewSubmitted={() => {
+                        fetchReviews();
+                        toast({
+                          title: "Review submitted",
+                          description: "Your review has been submitted for moderation.",
+                        });
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <Card className="p-6 text-center border-dashed">
+                    <Star className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                    <h3 className="text-lg font-semibold mb-2">Login untuk Memberikan Ulasan</h3>
+                    <p className="text-muted-foreground mb-4">
+                      Anda perlu login untuk memberikan ulasan pada situs ini.
+                    </p>
+                    <Link to="/auth">
+                      <Button>Login</Button>
+                    </Link>
+                  </Card>
+                )}
+              </div>
             </Card>
           </div>
 
@@ -451,56 +442,6 @@ const SiteDetail = () => {
               </div>
             </Card>
 
-            {/* Quick Actions */}
-            <Card className="p-6">
-              <h3 className="text-xl font-semibold mb-4">Aksi Cepat</h3>
-              <div className="space-y-3">
-                <Button
-                  className="w-full"
-                  variant="outline"
-                  onClick={() => setActiveTab('overview')}
-                >
-                  <MapPin className="w-4 h-4 mr-2" />
-                  Lihat Ringkasan
-                </Button>
-                <Button
-                  className="w-full"
-                  variant="outline"
-                  onClick={() => setActiveTab('gallery')}
-                >
-                  <ImageIcon className="w-4 h-4 mr-2" />
-                  Lihat Galeri
-                </Button>
-                <Button
-                  className="w-full"
-                  variant="outline"
-                  onClick={() => setActiveTab('reviews')}
-                >
-                  <MessageSquare className="w-4 h-4 mr-2" />
-                  Lihat Ulasan
-                </Button>
-                {user && (
-                  <Button
-                    className="w-full"
-                    onClick={() => setActiveTab('reviews')}
-                  >
-                    <Star className="w-4 h-4 mr-2" />
-                    Tulis Ulasan
-                  </Button>
-                )}
-                <div className="pt-2 border-t">
-                  <div className="text-xs text-muted-foreground space-y-1">
-                    <div className="flex items-center gap-2">
-                      <MapPin className="w-3 h-3" />
-                      <span>{site.village}, {site.district}</span>
-                    </div>
-                    <div className="font-mono text-xs">
-                      {site.latitude.toFixed(4)}, {site.longitude.toFixed(4)}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </Card>
           </div>
         </div>
       </div>
