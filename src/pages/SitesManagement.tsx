@@ -5,6 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import Papa from "papaparse";
+import * as XLSX from 'xlsx';
 
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -85,6 +86,7 @@ const SitesManagement: React.FC = () => {
   const [csvData, setCsvData] = useState<any[]>([]);
   const [csvErrors, setCsvErrors] = useState<string[]>([]);
   const [importingCsv, setImportingCsv] = useState(false);
+  const [parsing, setParsing] = useState(false);
   const [selectedSites, setSelectedSites] = useState<string[]>([]);
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
   const [bulkEditData, setBulkEditData] = useState({
@@ -108,6 +110,9 @@ const SitesManagement: React.FC = () => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const marker = useRef<L.Marker | null>(null);
+  const [mapError, setMapError] = useState<string | null>(null);
+  const [mapLoading, setMapLoading] = useState(false);
+  const [mapKey, setMapKey] = useState(0);
 
   const form = useForm<SiteFormValues>({
     resolver: zodResolver(siteSchema),
@@ -133,56 +138,94 @@ const SitesManagement: React.FC = () => {
 
   // Initialize map when site form opens
   useLayoutEffect(() => {
-    if (siteFormOpen && mapContainer.current && !map.current) {
-      // Get initial position
-      let lat: number;
-      let lng: number;
-      if (editingSite) {
-        lat = editingSite.latitude || -8.65;
-        lng = editingSite.longitude || 116.3241;
-      } else {
-        lat = form.getValues('latitude') || -8.65;
-        lng = form.getValues('longitude') || 116.3241;
+    if (siteFormOpen && mapContainer.current) {
+      // Force cleanup of existing map to prevent conflicts
+      if (map.current) {
+        map.current.remove();
+        map.current = null;
+        marker.current = null;
       }
 
-      // Initialize map
-      map.current = L.map(mapContainer.current).setView([lat, lng], 10);
+      setMapLoading(true);
+      setMapError(null);
 
-      // Add OpenStreetMap tiles
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors'
-      }).addTo(map.current);
+      // Use setTimeout to ensure DOM is ready
+      setTimeout(() => {
+        try {
+          // Get initial position
+          let lat: number;
+          let lng: number;
+          if (editingSite) {
+            lat = editingSite.latitude || -8.65;
+            lng = editingSite.longitude || 116.3241;
+          } else {
+            lat = form.getValues('latitude') || -8.65;
+            lng = form.getValues('longitude') || 116.3241;
+          }
 
-      // Add marker
-      marker.current = L.marker([lat, lng], { draggable: true }).addTo(map.current);
+          // Validate coordinates
+          if (typeof lat !== 'number' || typeof lng !== 'number' || isNaN(lat) || isNaN(lng)) {
+            throw new Error('Invalid coordinates provided');
+          }
 
-      // Update form when marker is dragged
-      marker.current.on('dragend', (event) => {
-        const marker = event.target;
-        const position = marker.getLatLng();
-        form.setValue('latitude', position.lat);
-        form.setValue('longitude', position.lng);
-      });
+          // Ensure container is still available
+          if (!mapContainer.current) {
+            throw new Error('Map container not available');
+          }
 
-      // Update marker when clicking on map
-      map.current.on('click', (event) => {
-        const { lat, lng } = event.latlng;
-        if (marker.current) {
-          marker.current.setLatLng([lat, lng]);
-        } else {
-          marker.current = L.marker([lat, lng], { draggable: true }).addTo(map.current);
+          try {
+            map.current = L.map(mapContainer.current, {
+              center: [lat, lng],
+              zoom: 10,
+              zoomControl: true,
+              attributionControl: true
+            });
+
+            // Add OpenStreetMap tiles with error handling
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+              attribution: '© OpenStreetMap contributors',
+              maxZoom: 18,
+            }).addTo(map.current);
+
+            // Add marker
+            marker.current = L.marker([lat, lng], {
+              draggable: true,
+              title: editingSite ? `Location of ${editingSite.name}` : 'Drag to set location'
+            }).addTo(map.current);
+
+            // Update form when marker is dragged
+            marker.current.on('dragend', (event) => {
+              const marker = event.target;
+              const position = marker.getLatLng();
+              form.setValue('latitude', position.lat);
+              form.setValue('longitude', position.lng);
+            });
+
+            // Update marker when clicking on map
+            map.current.on('click', (event) => {
+              const { lat, lng } = event.latlng;
+              if (marker.current) {
+                marker.current.setLatLng([lat, lng]);
+              } else {
+                marker.current = L.marker([lat, lng], { draggable: true }).addTo(map.current);
+              }
+              form.setValue('latitude', lat);
+              form.setValue('longitude', lng);
+            });
+
+            setMapLoading(false);
+          } catch (mapError) {
+            console.error('Failed to initialize map:', mapError);
+            setMapError('Failed to load map. Please check your internet connection and try again.');
+            setMapLoading(false);
+            return;
+          }
+        } catch (error) {
+          console.error('Map initialization error:', error);
+          setMapError('Invalid coordinates or map configuration error.');
+          setMapLoading(false);
         }
-        form.setValue('latitude', lat);
-        form.setValue('longitude', lng);
-      });
-    }
-
-    // Update marker position when editing existing site
-    if (siteFormOpen && map.current && marker.current && editingSite) {
-      const lat = editingSite.latitude || -8.65;
-      const lng = editingSite.longitude || 116.3241;
-      marker.current.setLatLng([lat, lng]);
-      map.current.setView([lat, lng], 10);
+      }, 100);
     }
 
     // Cleanup map when dialog closes
@@ -191,9 +234,11 @@ const SitesManagement: React.FC = () => {
         map.current.remove();
         map.current = null;
         marker.current = null;
+        setMapError(null);
+        setMapLoading(false);
       }
     };
-  }, [siteFormOpen, editingSite, form]);
+  }, [siteFormOpen, editingSite, form, mapKey]);
 
   const loadInitialData = async () => {
     try {
@@ -480,88 +525,212 @@ const SitesManagement: React.FC = () => {
     }
   };
 
-  const handleParseCsv = () => {
-    if (!csvFile) return;
+  const handleParseFile = () => {
+    if (!csvFile) {
+      setParsing(false);
+      return;
+    }
 
-    Papa.parse(csvFile, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (results) => {
-        const errors: string[] = [];
-        const validData: any[] = [];
+    const fileExtension = csvFile.name.split('.').pop()?.toLowerCase();
 
-        results.data.forEach((row: any, index: number) => {
-          // Validate required fields
-          if (!row.name || row.name.trim() === '') {
-            errors.push(`Baris ${index + 2}: Nama situs wajib diisi`);
-            return;
-          }
+    if (fileExtension === 'csv') {
+      Papa.parse(csvFile, {
+        header: true,
+        skipEmptyLines: true,
+        complete: (results) => {
+          const errors: string[] = [];
+          const validData: any[] = [];
 
-          if (!row.category_id || row.category_id.trim() === '') {
-            errors.push(`Baris ${index + 2}: Category ID wajib diisi`);
-            return;
-          }
-
-          // Validate latitude and longitude
-          const lat = parseFloat(row.latitude);
-          const lng = parseFloat(row.longitude);
-          if (isNaN(lat) || lat < -90 || lat > 90) {
-            errors.push(`Baris ${index + 2}: Latitude tidak valid (${row.latitude})`);
-            return;
-          }
-          if (isNaN(lng) || lng < -180 || lng > 180) {
-            errors.push(`Baris ${index + 2}: Longitude tidak valid (${row.longitude})`);
-            return;
-          }
-
-          // Validate entrance fee
-          const fee = parseFloat(row.entrance_fee);
-          if (isNaN(fee) || fee < 0) {
-            errors.push(`Baris ${index + 2}: Biaya masuk tidak valid (${row.entrance_fee})`);
-            return;
-          }
-
-          // Validate established year if provided
-          if (row.established_year && row.established_year.trim() !== '') {
-            const year = parseInt(row.established_year);
-            if (isNaN(year) || year < 1000 || year > new Date().getFullYear()) {
-              errors.push(`Baris ${index + 2}: Tahun berdiri tidak valid (${row.established_year})`);
+          results.data.forEach((row: any, index: number) => {
+            // Validate required fields
+            if (!row.name || row.name.trim() === '') {
+              errors.push(`Baris ${index + 2}: Nama situs wajib diisi`);
               return;
             }
+
+            if (!row.category_id || row.category_id.trim() === '') {
+              errors.push(`Baris ${index + 2}: Category ID wajib diisi`);
+              return;
+            }
+
+            // Validate category_id exists
+            if (!categories.find(c => c.id === row.category_id)) {
+              errors.push(`Baris ${index + 2}: Category ID tidak ditemukan (${row.category_id})`);
+              return;
+            }
+
+            // Validate latitude and longitude
+            const lat = parseFloat(row.latitude);
+            const lng = parseFloat(row.longitude);
+            if (isNaN(lat) || lat < -90 || lat > 90) {
+              errors.push(`Baris ${index + 2}: Latitude tidak valid (${row.latitude})`);
+              return;
+            }
+            if (isNaN(lng) || lng < -180 || lng > 180) {
+              errors.push(`Baris ${index + 2}: Longitude tidak valid (${row.longitude})`);
+              return;
+            }
+
+            // Validate entrance fee
+            const fee = parseFloat(row.entrance_fee);
+            if (isNaN(fee) || fee < 0) {
+              errors.push(`Baris ${index + 2}: Biaya masuk tidak valid (${row.entrance_fee})`);
+              return;
+            }
+
+            // Validate established year if provided
+            if (row.established_year && row.established_year.trim() !== '') {
+              const year = parseInt(row.established_year);
+              if (isNaN(year) || year < 1000 || year > new Date().getFullYear()) {
+                errors.push(`Baris ${index + 2}: Tahun berdiri tidak valid (${row.established_year})`);
+                return;
+              }
+            }
+
+            // Add validated data
+            const siteData = {
+              name: row.name.trim(),
+              local_name: row.local_name?.trim() || null,
+              description: row.description?.trim() || null,
+              category_id: row.category_id.trim(),
+              latitude: lat,
+              longitude: lng,
+              visiting_hours: row.visiting_hours?.trim() || null,
+              entrance_fee: fee,
+              village: row.village?.trim() || null,
+              district: row.district?.trim() || null,
+              established_year: row.established_year && row.established_year.trim() !== '' ? parseInt(row.established_year) : null,
+              created_by: userId,
+              is_active: true,
+            };
+
+            // Set category name for preview
+            const category = categories.find(c => c.id === siteData.category_id);
+            siteData.category_name = category ? category.name : 'Unknown';
+
+            validData.push(siteData);
+          });
+
+          setCsvData(validData);
+          setCsvErrors(errors);
+        },
+        error: (error) => {
+          toast({
+            title: "Gagal parse CSV",
+            description: error.message,
+            variant: "destructive",
+          });
+        },
+      });
+    } else if (fileExtension === 'xlsx') {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const data = e.target?.result;
+        if (!data) {
+          setCsvErrors(['Gagal membaca file Excel']);
+          return;
+        }
+
+        try {
+          const workbook = XLSX.read(data, { type: 'binary' });
+          const firstSheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[firstSheetName];
+          const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+          if (jsonData.length < 2) { // no headers or data
+            setCsvErrors(['File Excel kosong atau tidak valid']);
+            return;
           }
 
-          // Add validated data
-          validData.push({
-            name: row.name.trim(),
-            local_name: row.local_name?.trim() || null,
-            description: row.description?.trim() || null,
-            category_id: row.category_id.trim(),
-            latitude: lat,
-            longitude: lng,
-            visiting_hours: row.visiting_hours?.trim() || null,
-            entrance_fee: fee,
-            village: row.village?.trim() || null,
-            district: row.district?.trim() || null,
-            established_year: row.established_year && row.established_year.trim() !== '' ? parseInt(row.established_year) : null,
-            created_by: userId,
-            is_active: true,
-          });
-        });
+          // Skip first 4 rows with captions
+          if (jsonData.length < 5) { // need at least 5 rows for data after skip
+            setCsvErrors(['File Excel terlalu pendek setelah skip caption rows']);
+            return;
+          }
+          const headers = jsonData[4] as string[]; // assume row 5 (index 4) is headers if needed, but using fixed order
+          const dataRows = jsonData.slice(5); // data starts from row 6 (index 5)
 
-        setCsvData(validData);
-        setCsvErrors(errors);
-      },
-      error: (error) => {
-        toast({
-          title: "Gagal parse CSV",
-          description: error.message,
-          variant: "destructive",
-        });
-      },
-    });
+          const errors: string[] = [];
+          const validData: any[] = [];
+
+          dataRows.forEach((row: any[], index: number) => {
+            if (!row || row.length === 0) return;
+
+            // Fixed column order: 0=NO, 1=NAMA KARYA BUDAYA, 2=JENIS, 3=KATEGORI, 4=KETERANGAN, 5=JENIS OPK, 6=ASAL, 7=KONDISI SAAT INI, 8=LONGTITUDE, 9=LATITUDE
+            const name = row[1]?.toString().trim();
+            const description = row[4]?.toString().trim();
+            const categoryName = row[3]?.toString().trim();
+            const village = row[6]?.toString().trim();
+            const district = null; // ASAL is village, no separate district in sample
+            const latStr = row[9]?.toString().trim();
+            const lngStr = row[8]?.toString().trim();
+
+            if (!name) {
+              errors.push(`Baris ${index + 2}: Nama situs wajib diisi`);
+              return;
+            }
+
+            if (!categoryName) {
+              errors.push(`Baris ${index + 2}: Kategori wajib diisi`);
+              return;
+            }
+
+            const category = categories.find(c => c.name.toLowerCase() === categoryName.toLowerCase());
+            if (!category) {
+              errors.push(`Baris ${index + 2}: Kategori tidak ditemukan (${categoryName})`);
+              return;
+            }
+
+            const lat = parseFloat(latStr);
+            if (isNaN(lat) || lat < -90 || lat > 90) {
+              errors.push(`Baris ${index + 2}: Latitude tidak valid (${latStr})`);
+              return;
+            }
+
+            const lng = parseFloat(lngStr);
+            if (isNaN(lng) || lng < -180 || lng > 180) {
+              errors.push(`Baris ${index + 2}: Longitude tidak valid (${lngStr})`);
+              return;
+            }
+
+            const siteData = {
+              name,
+              local_name: null,
+              description: description || null,
+              category_id: category.id,
+              latitude: lat,
+              longitude: lng,
+              visiting_hours: null,
+              entrance_fee: 0,
+              village: village || null,
+              district: district || null,
+              established_year: null,
+              created_by: userId,
+              is_active: true,
+              category_name: category.name, // for preview
+            };
+
+            validData.push(siteData);
+          });
+
+          setCsvData(validData);
+          setCsvErrors(errors);
+        } catch (err) {
+          setCsvErrors(['Gagal memproses file Excel: ' + (err as Error).message]);
+        }
+      };
+
+      reader.onerror = () => {
+        setCsvErrors(['Gagal membaca file Excel']);
+      };
+
+      reader.readAsBinaryString(csvFile);
+    } else {
+      setCsvErrors(['Format file tidak didukung. Gunakan CSV atau XLSX.']);
+    }
   };
 
-  const handleImportCsv = async () => {
+  const handleImport = async () => {
     if (csvData.length === 0 || !userId) return;
 
     setImportingCsv(true);
@@ -725,7 +894,7 @@ const SitesManagement: React.FC = () => {
               disabled={selectedSites.length > 0}
             >
               <Plus className="w-4 h-4 mr-2" />
-              Import CSV
+              Import CSV/Excel
             </Button>
             <Button
               variant="outline"
@@ -1093,8 +1262,48 @@ const SitesManagement: React.FC = () => {
                   <MapPin className="w-4 h-4 text-heritage" />
                   <h3 className="font-semibold">Pilih Titik Koordinat</h3>
                 </div>
-                <div ref={mapContainer} className="relative h-64 w-full rounded-md overflow-hidden shadow-cultural" style={{ height: '256px', width: '100%' }} />
-                <p className="text-xs text-muted-foreground mt-2">Klik pada peta untuk menentukan lokasi.</p>
+
+                {mapLoading && (
+                  <div className="relative h-64 w-full rounded-md overflow-hidden shadow-cultural bg-muted flex items-center justify-center" style={{ height: '256px', width: '100%' }}>
+                    <div className="text-center">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-heritage mx-auto mb-2"></div>
+                      <p className="text-sm text-muted-foreground">Memuat peta...</p>
+                    </div>
+                  </div>
+                )}
+
+                {mapError && (
+                  <div className="relative h-64 w-full rounded-md overflow-hidden shadow-cultural bg-muted flex items-center justify-center" style={{ height: '256px', width: '100%' }}>
+                    <div className="text-center p-4">
+                      <MapPin className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                      <p className="text-sm text-muted-foreground mb-2">Lokasi tidak terdeteksi</p>
+                      <p className="text-xs text-destructive mb-3">{mapError}</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setMapKey(prev => prev + 1);
+                          setMapError(null);
+                          setMapLoading(true);
+                        }}
+                      >
+                        Coba Lagi
+                      </Button>
+                      <div className="mt-3 text-xs text-muted-foreground">
+                        <p>Latitude: {editingSite ? (editingSite.latitude || 'N/A') : form.getValues('latitude') || 'N/A'}</p>
+                        <p>Longitude: {editingSite ? (editingSite.longitude || 'N/A') : form.getValues('longitude') || 'N/A'}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {!mapLoading && !mapError && (
+                  <div key={mapKey} ref={mapContainer} className="relative h-64 w-full rounded-md overflow-hidden shadow-cultural" style={{ height: '256px', width: '100%' }} />
+                )}
+
+                {!mapLoading && !mapError && (
+                  <p className="text-xs text-muted-foreground mt-2">Klik pada peta untuk menentukan lokasi.</p>
+                )}
               </Card>
 
               <Card className="p-4">
@@ -1250,38 +1459,35 @@ const SitesManagement: React.FC = () => {
       <Dialog open={csvImportOpen} onOpenChange={setCsvImportOpen}>
         <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Import Situs Budaya dari CSV</DialogTitle>
+            <DialogTitle>Import Situs Budaya dari CSV/Excel</DialogTitle>
             <DialogDescription>
-              Upload file CSV dengan data situs budaya. Pastikan format sesuai dengan template.
+              Upload file CSV atau Excel dengan data situs budaya. Pastikan format sesuai dengan template.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
             <div>
-              <Label htmlFor="csv-file">Pilih File CSV</Label>
+              <Label htmlFor="csv-file">Pilih File CSV/Excel</Label>
               <Input
                 id="csv-file"
                 type="file"
-                accept=".csv"
+                accept=".csv,.xlsx"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (file) {
                     setCsvFile(file);
                     setCsvData([]);
                     setCsvErrors([]);
+                    setParsing(true);
+                    setTimeout(() => handleParseFile(), 0); // Ensure state update first
                   }
                 }}
               />
             </div>
 
-            {csvFile && (
-              <div className="space-y-2">
-                <Button
-                  onClick={() => handleParseCsv()}
-                  disabled={!csvFile}
-                >
-                  Parse CSV
-                </Button>
+            {parsing && (
+              <div className="text-center py-4">
+                <p className="text-sm text-muted-foreground">Parsing file... Please wait.</p>
               </div>
             )}
 
@@ -1337,6 +1543,10 @@ const SitesManagement: React.FC = () => {
               <p><strong>Format CSV yang diharapkan:</strong></p>
               <p>Header: name,local_name,description,category_id,latitude,longitude,visiting_hours,entrance_fee,village,district,established_year</p>
               <p>Contoh: "Desa Sade","Sade","Deskripsi...", "uuid-kategori", -8.65, 116.32, "08:00-17:00", 5000, "Sade", "Lombok Tengah", 1800</p>
+              <p><strong>Format Excel yang diharapkan:</strong></p>
+              <p>Kolom (urutan tetap): NO, NAMA KARYA BUDAYA, JENIS, KATEGORI, KETERANGAN, JENIS OPK, ASAL, KONDISI SAAT INI, LONGTITUDE, LATITUDE</p>
+              <p>Contoh baris data: 1, "Pura Lingsar", "Jenis...", "Candi & Kuil", "Deskripsi...", "OPK...", "Lingsar", "Baik", 116.2500, -8.4500</p>
+              <p>KATEGORI menggunakan nama kategori (case insensitive), lainnya opsional kecuali NAMA KARYA BUDAYA, KATEGORI, LONGTITUDE, LATITUDE. ASAL mapped to village.</p>
             </div>
           </div>
 
@@ -1345,7 +1555,7 @@ const SitesManagement: React.FC = () => {
               Batal
             </Button>
             <Button
-              onClick={handleImportCsv}
+              onClick={handleImport}
               disabled={csvData.length === 0 || csvErrors.length > 0 || importingCsv}
             >
               {importingCsv ? "Mengimport..." : `Import ${csvData.length} Situs`}
